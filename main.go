@@ -88,7 +88,7 @@ func filter[T any](ss []T, test func(T) bool) (ret []T) {
 }
 
 func MakeRequest(stops []Stop, args []string) Arrivals {
-	poincare := func(s Stop) bool { return strings.Contains(s.Name, args[0]) }
+	poincare := func(s Stop) bool { return strings.Contains(strings.ToLower(s.Name), strings.ToLower(args[0])) }
 	foundStops := filter(stops, poincare)
 	if len(foundStops) > 1 {
 		panic("Found more than 1 Stop")
