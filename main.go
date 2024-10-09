@@ -90,12 +90,22 @@ func filter[T any](ss []T, test func(T) bool) (ret []T) {
 func MakeRequest(stops []Stop, args []string) Arrivals {
 	poincare := func(s Stop) bool { return strings.Contains(strings.ToLower(s.Name), strings.ToLower(args[0])) }
 	foundStops := filter(stops, poincare)
+	index := 0
 	if len(foundStops) > 1 {
-		panic("Found more than 1 Stop")
+		for i, foundStop := range foundStops {
+			fmt.Printf("%d %s\n", i+1, foundStop.Name)
+		}
+		print("Quel arrêt? ")
+		_, err := fmt.Scanf("%d", &index)
+		if err != nil {
+			return nil
+		}
+		index = index - 1
 	} else if len(foundStops) == 0 {
 		panic("Found no Stop")
 	}
-	stop := foundStops[0]
+	stop := foundStops[index]
+	fmt.Printf("Horaires pour l'arrêt %s\n", stop.Name)
 	t := time.Now()
 	body := fmt.Sprintf("smscode=%v&hour=%v&minute=%v&nbHoraire=1&locale=fr", stop.Code, t.Hour(), t.Minute())
 	request, err := http.NewRequest("POST", "https://www.cts-strasbourg.eu/system/modules/eu.cts.module.horairetempsreel/actions/action_recherchetempsreel.jsp", strings.NewReader(body))
@@ -131,9 +141,19 @@ func MakeRequest(stops []Stop, args []string) Arrivals {
 func main() {
 	stops := GetStops()
 	argsWithoutProg := os.Args[1:]
-	arrivals := MakeRequest(stops, argsWithoutProg)
+	if argsWithoutProg[0] == "list" {
+		for _, stop := range stops {
+			println(stop.Name)
+		}
+	} else {
+		if len(argsWithoutProg[0]) < 3 {
+			println("Recherche trop courte!")
+			return
+		}
+		arrivals := MakeRequest(stops, argsWithoutProg)
 
-	for _, stop := range arrivals {
-		println(stop.Horaire, stop.Destination)
+		for _, stop := range arrivals {
+			println(stop.Horaire, stop.Destination)
+		}
 	}
 }
