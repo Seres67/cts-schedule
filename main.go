@@ -1,12 +1,13 @@
 package main
 
 import (
-	json2 "encoding/json"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 type Response struct {
@@ -69,7 +70,7 @@ func GetStops() []Stop {
 		}
 	}(res.Body)
 	var data StopsMap
-	err = json2.NewDecoder(res.Body).Decode(&data)
+	err = json.NewDecoder(res.Body).Decode(&data)
 	var stops []Stop
 	for _, stop := range data {
 		stops = append(stops, Stop{stop.Nom.Value, stop.CodeSMS.Value})
@@ -95,7 +96,8 @@ func MakeRequest(stops []Stop, args []string) Arrivals {
 		panic("Found no Stop")
 	}
 	stop := foundStops[0]
-	body := fmt.Sprintf("smscode=%v&type=undefined&hour=21&minute=06&nbHoraire=1&locale=fr", stop.Code)
+	t := time.Now()
+	body := fmt.Sprintf("smscode=%v&hour=%v&minute=%v&nbHoraire=1&locale=fr", stop.Code, t.Hour(), t.Minute())
 	request, err := http.NewRequest("POST", "https://www.cts-strasbourg.eu/system/modules/eu.cts.module.horairetempsreel/actions/action_recherchetempsreel.jsp", strings.NewReader(body))
 	if err != nil {
 		panic(err)
@@ -114,12 +116,12 @@ func MakeRequest(stops []Stop, args []string) Arrivals {
 		}
 	}(res.Body)
 	var response Response
-	err = json2.NewDecoder(res.Body).Decode(&response)
+	err = json.NewDecoder(res.Body).Decode(&response)
 	if err != nil {
 		panic(err)
 	}
 	var data Arrivals
-	err = json2.Unmarshal([]byte(response.ListeArrivee), &data)
+	err = json.Unmarshal([]byte(response.ListeArrivee), &data)
 	if err != nil {
 		panic(err)
 	}
