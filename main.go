@@ -3,40 +3,40 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
 
 type Response struct {
-	Success      string `json:"success"`
-	ListeArrivee string `json:"listeArrivee"`
+	Success  string `json:"success"`
+	Arrivals string `json:"listeArrivee"`
 }
 
 type Arrivals []struct {
 	Line            string      `json:"line"`
-	LineName        interface{} `json:"lineName"`
+	LineName        interface{} `json:"lineName,omitempty"`
 	TextColor       string      `json:"textColor"`
 	BackgroundColor string      `json:"backgroundColor"`
 	Type            string      `json:"type"`
 	Mode            string      `json:"mode"`
 	Destination     string      `json:"destination"`
-	Horaire         string      `json:"horaire"`
-	EstApresMinuit  bool        `json:"estApresMinuit"`
+	DepartureTime   string      `json:"horaire"`
+	AfterMidnight   bool        `json:"estApresMinuit"`
 	Disruption      struct {
 		Category  string `json:"category"`
 		Criticity string `json:"criticity"`
 	} `json:"disruption"`
-	Experimentation interface{} `json:"experimentation"`
+	Experimentation interface{} `json:"experimentation,omitempty"`
 	RealTime        bool        `json:"realTime"`
 }
 type StopsMap map[string]StopJSON
 
 type StopJSON struct {
-	Nom     Nom     `json:"nom"`
-	CodeSMS CodeSMS `json:"codeSMS"`
+	Name Nom     `json:"nom"`
+	Code CodeSMS `json:"codeSMS"`
 }
 
 type CodeSMS struct {
@@ -73,7 +73,7 @@ func GetStops() []Stop {
 	err = json.NewDecoder(res.Body).Decode(&data)
 	var stops []Stop
 	for _, stop := range data {
-		stops = append(stops, Stop{stop.Nom.Value, stop.CodeSMS.Value})
+		stops = append(stops, Stop{stop.Name.Value, stop.Code.Value})
 	}
 	return stops
 }
@@ -87,25 +87,28 @@ func filter[T any](ss []T, test func(T) bool) (ret []T) {
 	return ret
 }
 
-func MakeRequest(stops []Stop, args []string) Arrivals {
-	poincare := func(s Stop) bool { return strings.Contains(strings.ToLower(s.Name), strings.ToLower(args[0])) }
-	foundStops := filter(stops, poincare)
+// FilterStops TODO: um this isn't the way now that it is an API
+func FilterStops(stops []Stop, stopQuery string) Stop {
+	stop := func(s Stop) bool { return strings.Contains(strings.ToLower(s.Name), strings.ToLower(stopQuery)) }
+	foundStops := filter(stops, stop)
 	index := 0
 	if len(foundStops) > 1 {
-		for i, foundStop := range foundStops {
-			fmt.Printf("%d %s\n", i+1, foundStop.Name)
-		}
-		print("Quel arrêt? ")
-		_, err := fmt.Scanf("%d", &index)
-		if err != nil {
-			return nil
-		}
-		index = index - 1
+		//for i, foundStop := range foundStops {
+		//	fmt.Printf("%d %s\n", i+1, foundStop.Name)
+		//}
+		//print("Quel arrêt? ")
+		//_, err := fmt.Scanf("%d", &index)
+		//if err != nil {
+		//	panic(err)
+		//}
+		//index = index - 1
 	} else if len(foundStops) == 0 {
 		panic("Found no Stop")
 	}
-	stop := foundStops[index]
-	fmt.Printf("Horaires pour l'arrêt %s\n", stop.Name)
+	return stops[index]
+}
+
+func MakeRequest(stop Stop) Arrivals {
 	t := time.Now()
 	body := fmt.Sprintf("smscode=%v&hour=%v&minute=%v&nbHoraire=1&locale=fr", stop.Code, t.Hour(), t.Minute())
 	request, err := http.NewRequest("POST", "https://www.cts-strasbourg.eu/system/modules/eu.cts.module.horairetempsreel/actions/action_recherchetempsreel.jsp", strings.NewReader(body))
@@ -131,29 +134,48 @@ func MakeRequest(stops []Stop, args []string) Arrivals {
 		panic(err)
 	}
 	var data Arrivals
-	err = json.Unmarshal([]byte(response.ListeArrivee), &data)
+	err = json.Unmarshal([]byte(response.Arrivals), &data)
 	if err != nil {
 		panic(err)
 	}
 	return data
 }
 
-func main() {
-	stops := GetStops()
-	argsWithoutProg := os.Args[1:]
-	if argsWithoutProg[0] == "list" {
-		for _, stop := range stops {
-			println(stop.Name)
-		}
-	} else {
-		if len(argsWithoutProg[0]) < 3 {
-			println("Recherche trop courte!")
-			return
-		}
-		arrivals := MakeRequest(stops, argsWithoutProg)
+var stops []Stop
 
-		for _, stop := range arrivals {
-			println(stop.Horaire, stop.Destination)
-		}
+func Status(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"message": "API is online!",
+	})
+}
+
+func HandleStop(c *gin.Context) {
+	name := c.Param("name")
+	stop := FilterStops(stops, name)
+	arrivals := MakeRequest(stop)
+	c.JSON(http.StatusOK, gin.H{
+		"arrivals": arrivals,
+	})
+}
+
+func HandleStops(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"stops": stops,
+	})
+}
+
+func main() {
+	stops = GetStops()
+
+	r := gin.Default()
+	r.GET("/", Status)
+	r.GET("/stop/:name", HandleStop)
+	r.GET("/stops", HandleStops)
+
+	err := r.Run(":8080")
+	if err != nil {
+		panic(err)
 	}
 }
+
+//TODO: replace every panic with better error handling (we don't want the API to crash every few seconds)
